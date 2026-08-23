@@ -59,6 +59,30 @@ jobs:
           APP=$(find build -name "StepSync.app" -maxdepth 4 | head -1)
           echo "找到 APP: $APP"
           cp -r "$APP" Payload/
+          # ===== 关键修复：XcodeGen 在本 runner 未把自定义 Info.plist 的键合进产物，
+          # Xcode 退回生成了“最小 plist”，导致 HealthKit 权限描述与 stepsync:// URL Scheme 丢失
+          # （缺 NSHealthUpdateUsageDescription 写步数会直接崩溃；缺 CFBundleURLTypes 快捷指令唤不动）。
+          # 这里用 PlistBuddy 把关键键兜底写回最终 IPA，确保功能可用。 =====
+          PLIST="Payload/StepSync.app/Info.plist"
+          set_plist () {
+            /usr/libexec/PlistBuddy -c "Set $1 \"$3\"" "$PLIST" 2>/dev/null \
+              || /usr/libexec/PlistBuddy -c "Add $1 $2 \"$3\"" "$PLIST" 2>/dev/null
+          }
+          set_plist :NSHealthShareUsageDescription string "用于读取步数并同步到钉钉运动"
+          set_plist :NSHealthUpdateUsageDescription string "用于把步数写入苹果健康，供钉钉运动读取"
+          set_plist :CFBundleDisplayName string "步数写入"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleURLTypes" "$PLIST" >/dev/null 2>&1 \
+            || /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes array" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleURLTypes:0" "$PLIST" >/dev/null 2>&1 \
+            || /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0 dict" "$PLIST"
+          set_plist :CFBundleURLTypes:0:CFBundleURLName string "com.stepsync.app"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleURLTypes:0:CFBundleURLSchemes" "$PLIST" >/dev/null 2>&1 \
+            || /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes array" "$PLIST"
+          set_plist :CFBundleURLTypes:0:CFBundleURLSchemes:0 string "stepsync"
+          echo "--- 注入后 Info.plist 关键键校验 ---"
+          /usr/libexec/PlistBuddy -c "Print :NSHealthUpdateUsageDescription" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Print :NSHealthShareUsageDescription" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleURLTypes:0:CFBundleURLSchemes:0" "$PLIST"
           codesign -f -s - --entitlements StepSync/StepSync.entitlements Payload/StepSync.app
           zip -r StepSync.ipa Payload
       - name: Upload IPA (guaranteed)
