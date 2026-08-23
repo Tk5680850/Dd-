@@ -3,6 +3,8 @@ on:
   workflow_dispatch: {}
   push:
     branches: [ main ]
+    paths-ignore:
+      - 'ci-diag.txt'
 permissions:
   contents: write
 jobs:
@@ -91,19 +93,20 @@ jobs:
           path: StepSync.deb
       - name: Collect diagnostics (write to repo ci-diag.txt)
         if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           {
             echo "=== WRITE LOG ==="; cat /tmp/write.log 2>/dev/null
             echo "=== GEN LOG ==="; cat /tmp/gen.log 2>/dev/null
             echo "=== BUILD LOG ==="; cat /tmp/build.log 2>/dev/null
           } > /tmp/all_diag.log
-          echo "===== DIAGNOSTICS ====="
+          echo "===== DIAGNOSTICS (也见 ci-diag.txt) ====="
           cat /tmp/all_diag.log
           B64=$(base64 -w0 /tmp/all_diag.log)
-          SHA=$(gh api repos/Tk5680850/Dd-/contents/ci-diag.txt --jq '.sha' 2>/dev/null || true)
-          if [ -n "$SHA" ]; then
-            gh api -X PUT repos/Tk5680850/Dd-/contents/ci-diag.txt -f message="ci diag" -f content="$B64" -f sha="$SHA"
-          else
-            gh api -X PUT repos/Tk5680850/Dd-/contents/ci-diag.txt -f message="ci diag" -f content="$B64"
-          fi
-          echo "已上传诊断到 ci-diag.txt"
+          RESP=$(curl -sS -X PUT \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/Tk5680850/Dd-/contents/ci-diag.txt" \
+            -d "{\"message\":\"ci diag\",\"content\":\"$B64\"}")
+          echo "PUT resp: $(echo "$RESP" | head -c 200)"
