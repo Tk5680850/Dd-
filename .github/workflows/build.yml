@@ -22,13 +22,23 @@ jobs:
           echo "bmFtZTogU3RlcFN5bmMKb3B0aW9uczoKICBidW5kbGVJZFByZWZpeDogY29tLnN0ZXBzeW5jCiAgZGVwbG95bWVudFRhcmdldDoKICAgIGlPUzogIjE1LjAiCnRhcmdldHM6CiAgU3RlcFN5bmM6CiAgICB0eXBlOiBhcHBsaWNhdGlvbgogICAgcGxhdGZvcm06IGlPUwogICAgc291cmNlczoKICAgICAgLSBwYXRoOiBTdGVwU3luYwogICAgICAgIGV4Y2x1ZGVzOgogICAgICAgICAgLSBJbmZvLnBsaXN0CiAgICAgICAgICAtIFN0ZXBTeW5jLmVudGl0bGVtZW50cwogICAgaW5mbzoKICAgICAgcGF0aDogU3RlcFN5bmMvSW5mby5wbGlzdAogICAgZW50aXRsZW1lbnRzOiBTdGVwU3luYy9TdGVwU3luYy5lbnRpdGxlbWVudHMKICAgIHNldHRpbmdzOgogICAgICBiYXNlOgogICAgICAgIFBST0RVQ1RfQlVORExFX0lERU5USUZJRVI6IGNvbS5zdGVwc3luYy5hcHAKICAgICAgICBTV0lGVF9WRVJTSU9OOiAiNS45IgogICAgICAgIFRBUkdFVEVEX0RFVklDRV9GQU1JTFk6ICIxIgogICAgICAgIEdFTkVSQVRFX0lORk9QTElTVF9GSUxFOiBmYWxzZQogICAgICAgIERFVkVMT1BNRU5UX1RFQU06ICIiCg==" | base64 -d > StepSync/project.yml
       - name: Generate Xcode project
         run: xcodegen generate
-      - name: Archive (unsigned)
+      - name: Build (unsigned)
         run: |
-          xcodebuild -project StepSync.xcodeproj -scheme StepSync -sdk iphoneos -configuration Release -archivePath "$PWD/build/StepSync.xcarchive" CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO archive
+          set -x
+          xcodebuild -list -project StepSync.xcodeproj 2>&1 | tee /tmp/list.log
+          xcodebuild -project StepSync.xcodeproj -scheme StepSync -sdk iphoneos -configuration Release CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO build 2>&1 | tee /tmp/build.log
+          if [ ${PIPESTATUS[0]} -ne 0 ]; then
+            echo "::error::BUILD FAILED — 错误摘要见 run summary"
+            tail -120 /tmp/build.log >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          find build -name "StepSync.app" -maxdepth 4 2>&1
       - name: Package IPA (ad-hoc + healthkit entitlement)
         run: |
           rm -rf Payload && mkdir -p Payload
-          cp -r "$PWD/build/StepSync.xcarchive/Products/Applications/StepSync.app" Payload/
+          APP=$(find build -name "StepSync.app" -maxdepth 4 | head -1)
+          echo "找到 APP: $APP"
+          cp -r "$APP" Payload/
           codesign -f -s - --entitlements StepSync/StepSync.entitlements Payload/StepSync.app
           zip -r StepSync.ipa Payload
       - name: Upload IPA (guaranteed)
