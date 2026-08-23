@@ -33,6 +33,10 @@ jobs:
             xcodegen generate
             echo "GEN_EXIT=$?"
             ls -la StepSync.xcodeproj 2>&1
+            # 强制 objectVersion 兼容 runner 的 Xcode 15.4 (认 objectVersion 56)
+            sed -i '' -E 's/objectVersion = [0-9]+/objectVersion = 56/' StepSync.xcodeproj/project.pbxproj
+            echo "--- objectVersion now ---"
+            grep -n "objectVersion" StepSync.xcodeproj/project.pbxproj | head -1
           } 2>&1 | tee /tmp/gen.log
           if ! [ -d StepSync.xcodeproj ]; then
             echo "::error::XCODEGEN FAILED — 见仓库 ci-diag.txt"
