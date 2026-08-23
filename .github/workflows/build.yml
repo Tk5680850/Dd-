@@ -22,16 +22,18 @@ jobs:
           echo "bmFtZTogU3RlcFN5bmMKb3B0aW9uczoKICBidW5kbGVJZFByZWZpeDogY29tLnN0ZXBzeW5jCiAgZGVwbG95bWVudFRhcmdldDoKICAgIGlPUzogIjE1LjAiCnRhcmdldHM6CiAgU3RlcFN5bmM6CiAgICB0eXBlOiBhcHBsaWNhdGlvbgogICAgcGxhdGZvcm06IGlPUwogICAgc291cmNlczoKICAgICAgLSBwYXRoOiBTdGVwU3luYwogICAgICAgIGV4Y2x1ZGVzOgogICAgICAgICAgLSBJbmZvLnBsaXN0CiAgICAgICAgICAtIFN0ZXBTeW5jLmVudGl0bGVtZW50cwogICAgaW5mbzoKICAgICAgcGF0aDogU3RlcFN5bmMvSW5mby5wbGlzdAogICAgZW50aXRsZW1lbnRzOiBTdGVwU3luYy9TdGVwU3luYy5lbnRpdGxlbWVudHMKICAgIHNldHRpbmdzOgogICAgICBiYXNlOgogICAgICAgIFBST0RVQ1RfQlVORExFX0lERU5USUZJRVI6IGNvbS5zdGVwc3luYy5hcHAKICAgICAgICBTV0lGVF9WRVJTSU9OOiAiNS45IgogICAgICAgIFRBUkdFVEVEX0RFVklDRV9GQU1JTFk6ICIxIgogICAgICAgIEdFTkVSQVRFX0lORk9QTElTVF9GSUxFOiBmYWxzZQogICAgICAgIERFVkVMT1BNRU5UX1RFQU06ICIiCg==" | base64 -d > project.yml
       - name: Generate Xcode project
         run: |
-          set -x
-          ls -la
-          cat project.yml
-          xcodegen generate 2>&1 | tee /tmp/gen.log || {
-            echo "::error::XCODEGEN FAILED"
-            tail -40 /tmp/gen.log >> "$GITHUB_STEP_SUMMARY"
-            grep -iE "error|invalid|fail|not found|expected|missing" /tmp/gen.log | head -20 | while IFS= read -r l; do printf '::error::%s\n' "$l"; done
+          {
+            set -x
+            ls -la
+            cat project.yml
+            xcodegen generate
+            echo "GEN_EXIT=$?"
+            ls -la StepSync.xcodeproj 2>&1
+          } 2>&1 | tee /tmp/gen.log
+          if ! [ -d StepSync.xcodeproj ]; then
+            echo "::error::XCODEGEN FAILED — 见仓库 ci-diag.txt"
             exit 1
-          }
-          ls -la StepSync.xcodeproj
+          fi
       - name: Build (unsigned)
         run: |
           set -x
@@ -85,3 +87,21 @@ jobs:
         with:
           name: StepSync.deb
           path: StepSync.deb
+      - name: Collect diagnostics (write to repo ci-diag.txt)
+        if: always()
+        run: |
+          {
+            echo "=== WRITE LOG ==="; cat /tmp/write.log 2>/dev/null
+            echo "=== GEN LOG ==="; cat /tmp/gen.log 2>/dev/null
+            echo "=== BUILD LOG ==="; cat /tmp/build.log 2>/dev/null
+          } > /tmp/all_diag.log
+          echo "===== DIAGNOSTICS ====="
+          cat /tmp/all_diag.log
+          B64=$(base64 -w0 /tmp/all_diag.log)
+          SHA=$(gh api repos/Tk5680850/Dd-/contents/ci-diag.txt --jq '.sha' 2>/dev/null || true)
+          if [ -n "$SHA" ]; then
+            gh api -X PUT repos/Tk5680850/Dd-/contents/ci-diag.txt -f message="ci diag" -f content="$B64" -f sha="$SHA"
+          else
+            gh api -X PUT repos/Tk5680850/Dd-/contents/ci-diag.txt -f message="ci diag" -f content="$B64"
+          fi
+          echo "已上传诊断到 ci-diag.txt"
