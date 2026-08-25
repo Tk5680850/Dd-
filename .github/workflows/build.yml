@@ -101,7 +101,7 @@ jobs:
           Package: com.stepsync.app
           Name: 步数写入
           Version: ${{ github.run_number }}
-          Architecture: iphoneos-arm
+          Architecture: iphoneos-arm64
           Description: 写入苹果健康步数，支持 App 内远程自更新
           Maintainer: you <you@example.com>
           Section: Utilities
